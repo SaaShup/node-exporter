@@ -1,0 +1,23 @@
+services:
+  node-exporter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ghcr.io/saashup/node-exporter:latest
+    container_name: node-exporter
+    restart: unless-stopped
+    # required at run time, an image can't set them
+    network_mode: host
+    pid: host
+    volumes:
+      - /:/host:ro,rslave
+    # only when the traefik network is not 172.31.0.0/16
+    environment:
+      LISTEN_ADDRESS: ${WEB_GATEWAY:-172.31.0.1}:9100
+    labels:
+      - "prometheus_address=${WEB_GATEWAY:-172.31.0.1}:9100"
+    logging:
+      driver: syslog
+      options:
+        syslog-address: "udp://127.0.0.1:5514"
+        tag: "{{.Name}}"
