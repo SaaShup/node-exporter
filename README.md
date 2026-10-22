@@ -37,6 +37,9 @@ The textfile metrics are written by `apt-metrics.sh`, started next to
 node_exporter: every `APT_METRICS_INTERVAL` seconds (default 300) it runs
 the host's apt through `chroot /host` and writes `/tmp/textfile/apt.prom`
 inside the container. Nothing has to be installed on the host.
+When apt's binary cache is missing or stale, apt needs a writable `/tmp`
+in the chroot: the image declares a volume on `/host/tmp` for it (the
+host's `/tmp` is not touched, the rest of `/host` stays read-only).
 `chroot` needs root, so only this loop runs as root (it reads the host,
 mounted read-only, and listens on nothing); node_exporter, the part on
 the network, runs as `nobody`.

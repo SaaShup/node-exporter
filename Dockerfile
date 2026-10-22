@@ -15,6 +15,11 @@ ENV LISTEN_ADDRESS=172.31.0.1:9100 \
 # mounted read-only). node_exporter itself, the part on the network, runs as nobody.
 USER root
 
+# apt needs a writable /tmp in the chroot when its binary cache is missing or stale (it then
+# re-reads the InRelease files). A volume there, not the host's /tmp: the rest of /host stays
+# read-only and nothing has to be added at run time.
+VOLUME /host/tmp
+
 COPY --chmod=755 apt-metrics.sh /apt-metrics.sh
 COPY --chmod=755 entrypoint.sh /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

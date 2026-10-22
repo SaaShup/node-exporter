@@ -18,7 +18,7 @@ TMP="$(mktemp -d)"
 failures=0
 
 cleanup() {
-  docker rm -f "$NAME" "$NAME-host" >/dev/null 2>&1 || true
+  docker rm -fv "$NAME" "$NAME-host" >/dev/null 2>&1 || true
   rm -rf "$TMP"
 }
 trap cleanup EXIT
@@ -66,7 +66,7 @@ else
   else
     fail "expected exit with 'cannot assign requested address'"; docker logs "$NAME" 2>&1 | tail -10
   fi
-  docker rm -f "$NAME" >/dev/null
+  docker rm -fv "$NAME" >/dev/null
 fi
 
 echo "== run as documented (host /, host network, host PID)"
@@ -113,13 +113,15 @@ if docker logs "$NAME" 2>&1 | grep -E 'level=ERROR|apt-metrics:'; then
 else
   pass "no error in logs"
 fi
-docker rm -f "$NAME" >/dev/null
+docker rm -fv "$NAME" >/dev/null
 
 echo "== apt metrics on a known host, run-time arguments"
 # a Debian host where a reboot is required, unattended-upgrades reboots at 02:30 Paris time
-# and has planned one
+# and has planned one; its package lists are there but not apt's binary cache, so apt has to
+# re-read them (and needs a writable /tmp)
 docker build -q -t "$HOST_IMAGE" - >/dev/null <<'EOF'
 FROM debian:trixie-slim
+RUN rm /etc/apt/apt.conf.d/docker-clean && apt-get update -qq && rm -f /var/cache/apt/*.bin
 RUN printf 'APT::Periodic::Update-Package-Lists "1";\nAPT::Periodic::Unattended-Upgrade "1";\n' \
       > /etc/apt/apt.conf.d/20auto-upgrades \
  && printf 'Unattended-Upgrade::Automatic-Reboot "true";\nUnattended-Upgrade::Automatic-Reboot-Time "02:30";\n' \
@@ -139,7 +141,7 @@ m="$TMP/metrics-host"
 if wait_metrics /smoke-metrics "$m" '^apt_upgrades_pending '; then
   pass "run-time argument applied (--web.telemetry-path)"
   expect "$m" '^node_reboot_required 1$' "node_reboot_required 1"
-  expect "$m" '^apt_upgrades_pending 0$' "apt_upgrades_pending 0 (chroot apt-get works)"
+  expect "$m" '^apt_upgrades_pending [0-9]+$' "apt_upgrades_pending without apt's binary cache"
   expect "$m" '^apt_unattended_upgrades_enabled 1$' "apt_unattended_upgrades_enabled 1"
   expect "$m" '^apt_auto_reboot_enabled 1$' "apt_auto_reboot_enabled 1"
   expect "$m" '^apt_auto_reboot_time_seconds\{time="02:30",timezone="Europe/Paris"\} 9000$' "apt_auto_reboot_time_seconds 02:30"

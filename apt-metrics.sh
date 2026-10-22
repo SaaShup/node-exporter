@@ -19,8 +19,10 @@ write_metrics() {
   [ -f /host/run/reboot-required ] && required=1
 
   pending=""
-  if sim="$(chroot /host apt-get -s -o Debug::NoLocking=1 upgrade 2>/dev/null)"; then
+  if sim="$(chroot /host apt-get -s -o Debug::NoLocking=1 upgrade 2>&1)"; then
     pending="$(printf '%s\n' "$sim" | grep -c '^Inst ')"
+  else
+    echo "apt-metrics: apt-get -s upgrade failed: $(printf '%s\n' "$sim" | grep '^E:' | head -n 2)" >&2
   fi
 
   conf="$(chroot /host apt-config dump 2>/dev/null)"
