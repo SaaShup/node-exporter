@@ -3,7 +3,8 @@
 Repackages `quay.io/prometheus/node-exporter` as a versioned, buildable
 image. It reports the VM itself: OS, kernel, uptime,
 CPU/RAM/disk/network, and through the textfile collector the pending
-reboot (`node_reboot_required`) and upgrades (`apt_upgrades_pending`).
+reboot (`node_reboot_required`), the upgrades (`apt_upgrades_pending`) and
+the unattended-upgrades reboot settings.
 
 - `Dockerfile` → static metadata (Prometheus scrape labels) and default
   flags (`--path.rootfs=/host`, udev data, textfile directory).
@@ -32,9 +33,26 @@ is not exposed on the public IP. If that network has another subnet, set
 `prometheus_address=<gateway>:9100`. Without the `traefik` network the
 container exits (`cannot assign requested address`).
 
-For the textfile metrics, the `node-exporter-apt` timer installed by
-`paashup-install.sh` writes `/var/lib/node_exporter/textfile/apt.prom`
-on the host. Without it these two metrics are simply absent.
+The textfile metrics are written by `apt-metrics.sh`, started next to
+node_exporter: every `APT_METRICS_INTERVAL` seconds (default 300) it runs
+the host's apt through `chroot /host` and writes `/tmp/textfile/apt.prom`
+inside the container. Nothing has to be installed on the host.
+When apt's binary cache is missing or stale, apt needs a writable `/tmp`
+in the chroot: the image declares a volume on `/host/tmp` for it (the
+host's `/tmp` is not touched, the rest of `/host` stays read-only).
+`chroot` needs root, so only this loop runs as root (it reads the host,
+mounted read-only, and listens on nothing); node_exporter, the part on
+the network, runs as `nobody`.
+
+| Metric | Value |
+|---|---|
+| `node_reboot_required` | 1 if `/run/reboot-required` exists |
+| `apt_upgrades_pending` | packages `apt-get -s upgrade` would install |
+| `apt_unattended_upgrades_enabled` | 1 if `APT::Periodic::Unattended-Upgrade` is set |
+| `apt_auto_reboot_enabled` | `Unattended-Upgrade::Automatic-Reboot` |
+| `apt_auto_reboot_time_seconds{time,timezone}` | `Automatic-Reboot-Time`, in seconds after midnight in the host time zone (absent when it is `now`) |
+| `apt_auto_reboot_timezone_offset_seconds{timezone}` | UTC offset of the host time zone |
+| `node_reboot_scheduled_timestamp_seconds` | time of the reboot planned by unattended-upgrades, 0 if none |
 
 ## Usage
 
@@ -57,6 +75,21 @@ docker run -d \
 ```
 
 Metrics are exposed on `http://172.31.0.1:9100/metrics`.
+
+## Tests
+
+```bash
+tests/smoke.sh                 # builds the image, then tests it
+IMAGE=<ref> tests/smoke.sh     # tests an existing image
+```
+
+It runs the container as documented (on `127.0.0.1:$SMOKE_PORT`,
+default 19100) and checks the labels, the core collectors, `/` seen
+through `--path.rootfs`, node_exporter running as `nobody`, run-time
+arguments added to the baked flags, and the apt metrics, against both
+the real host and a Debian rootfs with a known unattended-upgrades
+config. CI runs it on every push to `main`, on pull requests and
+before each release.
 
 ## Release
 
