@@ -1,0 +1,24 @@
+name: Smoke test
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+  # called by github-publish.yaml before pushing a release
+  workflow_call:
+
+jobs:
+  smoke:
+    name: Image starts and serves metrics
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Run smoke test
+        run: tests/smoke.sh

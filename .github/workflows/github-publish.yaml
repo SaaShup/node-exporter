@@ -16,8 +16,16 @@ on:
         type: string
 
 jobs:
+  smoke:
+    name: Smoke test
+    if: startsWith(github.ref, 'refs/tags/v') && !inputs.skip_publish
+    permissions:
+      contents: read
+    uses: ./.github/workflows/smoke-test.yaml
+
   publish:
     name: Push image to GHCR
+    needs: smoke
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v') && !inputs.skip_publish
     timeout-minutes: 30
