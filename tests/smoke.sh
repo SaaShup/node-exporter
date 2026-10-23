@@ -96,10 +96,13 @@ if wait_metrics /metrics "$m" '^node_reboot_required '; then
   else
     echo "  skip apt_upgrades_pending: no apt on this host"
   fi
-  if systemctl cat apt-daily-upgrade.timer >/dev/null 2>&1; then
+  # a stopped timer has no next run (GitHub runners stop and disable apt-daily-upgrade.timer)
+  if systemctl is-active --quiet apt-daily-upgrade.timer 2>/dev/null; then
     expect "$m" '^apt_upgrade_timer_next_timestamp_seconds [0-9.e+]+$' "apt_upgrade_timer_next_timestamp_seconds from the host's systemd"
+  elif grep -q '^apt_upgrade_timer_next_timestamp_seconds ' "$m"; then
+    fail "apt_upgrade_timer_next_timestamp_seconds with apt-daily-upgrade.timer not active"
   else
-    echo "  skip apt_upgrade_timer_next_timestamp_seconds: no apt-daily-upgrade.timer on this host"
+    pass "no apt_upgrade_timer_next_timestamp_seconds: apt-daily-upgrade.timer not active on this host"
   fi
   expect "$m" '^node_textfile_scrape_error 0$' "node_textfile_scrape_error 0"
 else
