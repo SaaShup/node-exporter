@@ -53,6 +53,10 @@ the network, runs as `nobody`.
 | `apt_auto_reboot_time_seconds{time,timezone}` | `Automatic-Reboot-Time`, in seconds after midnight in the host time zone (absent when it is `now`) |
 | `apt_auto_reboot_timezone_offset_seconds{timezone}` | UTC offset of the host time zone |
 | `node_reboot_scheduled_timestamp_seconds` | time of the reboot planned by unattended-upgrades, 0 if none |
+| `apt_upgrade_timer_next_timestamp_seconds` | next run of `apt-daily-upgrade.timer` (absent when systemd can't be asked) |
+| `apt_upgrade_timer_last_timestamp_seconds` | last time that timer fired |
+| `apt_unattended_upgrades_last_run_timestamp_seconds` | last run of unattended-upgrades that went through (`unattended-upgrades-stamp`); older than the timer's last fire = that run exited early (apt locked…) and planned no reboot |
+| `apt_lists_update_timestamp_seconds` | last refresh of the package lists by apt-daily (`update-stamp`) |
 
 ## Usage
 
