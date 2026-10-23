@@ -14,6 +14,25 @@ is_true() {
   case "$1" in true|yes|on|1) return 0 ;; *) return 1 ;; esac
 }
 
+# mtime of a file of the host, in seconds since epoch (empty if it is missing)
+mtime() {
+  stat -c %Y "/host$1" 2>/dev/null
+}
+
+# a timestamp property of a host timer, in seconds since epoch (empty if unknown or never)
+timer_get() {
+  v="$(chroot /host systemctl show "$1" -p "$2" --value --timestamp=unix 2>/dev/null)"
+  case "$v" in @[0-9]*) echo "${v#@}" ;; esac
+}
+
+# metric <name> <help> <value>: nothing when the value is empty
+metric() {
+  [ -n "$3" ] || return 0
+  echo "# HELP $1 $2"
+  echo "# TYPE $1 gauge"
+  echo "$1 $3"
+}
+
 write_metrics() {
   required=0
   [ -f /host/run/reboot-required ] && required=1
@@ -54,7 +73,24 @@ write_metrics() {
     [ -n "$usec" ] && scheduled=$(( usec / 1000000 ))
   fi
 
+  # the daily run: when the timer fires (6:00 + random delay on Debian), and when
+  # unattended-upgrade really went through (its stamp: a run that exits early, e.g. because apt
+  # is locked, fires the timer but leaves the stamp, and does not plan the reboot either)
+  timer_next="$(timer_get apt-daily-upgrade.timer NextElapseUSecRealtime)"
+  timer_last="$(timer_get apt-daily-upgrade.timer LastTriggerUSec)"
+  [ -n "$timer_last" ] || timer_last="$(mtime /var/lib/systemd/timers/stamp-apt-daily-upgrade.timer)"
+  uu_last="$(mtime /var/lib/apt/periodic/unattended-upgrades-stamp)"
+  lists_last="$(mtime /var/lib/apt/periodic/update-stamp)"
+
   {
+    metric apt_upgrade_timer_next_timestamp_seconds \
+      'Next run of apt-daily-upgrade.timer (unattended-upgrades).' "$timer_next"
+    metric apt_upgrade_timer_last_timestamp_seconds \
+      'Last time apt-daily-upgrade.timer fired.' "$timer_last"
+    metric apt_unattended_upgrades_last_run_timestamp_seconds \
+      'Last run of unattended-upgrades that went through (its stamp file).' "$uu_last"
+    metric apt_lists_update_timestamp_seconds \
+      'Last refresh of the package lists by apt-daily (update-stamp).' "$lists_last"
     echo '# HELP node_reboot_required 1 if a reboot is pending.'
     echo '# TYPE node_reboot_required gauge'
     echo "node_reboot_required $required"

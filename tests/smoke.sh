@@ -96,6 +96,14 @@ if wait_metrics /metrics "$m" '^node_reboot_required '; then
   else
     echo "  skip apt_upgrades_pending: no apt on this host"
   fi
+  # a stopped timer has no next run (GitHub runners stop and disable apt-daily-upgrade.timer)
+  if systemctl is-active --quiet apt-daily-upgrade.timer 2>/dev/null; then
+    expect "$m" '^apt_upgrade_timer_next_timestamp_seconds [0-9.e+]+$' "apt_upgrade_timer_next_timestamp_seconds from the host's systemd"
+  elif grep -q '^apt_upgrade_timer_next_timestamp_seconds ' "$m"; then
+    fail "apt_upgrade_timer_next_timestamp_seconds with apt-daily-upgrade.timer not active"
+  else
+    pass "no apt_upgrade_timer_next_timestamp_seconds: apt-daily-upgrade.timer not active on this host"
+  fi
   expect "$m" '^node_textfile_scrape_error 0$' "node_textfile_scrape_error 0"
 else
   fail "metrics not served on $ADDR"
@@ -128,7 +136,11 @@ RUN printf 'APT::Periodic::Update-Package-Lists "1";\nAPT::Periodic::Unattended-
       > /etc/apt/apt.conf.d/52reboot \
  && ln -sf /usr/share/zoneinfo/Europe/Paris /etc/localtime && echo Europe/Paris > /etc/timezone \
  && mkdir -p /run/systemd/shutdown && touch /run/reboot-required \
- && printf 'USEC=1893461400000000\nWARN_WALL=1\nMODE=reboot\n' > /run/systemd/shutdown/scheduled
+ && printf 'USEC=1893461400000000\nWARN_WALL=1\nMODE=reboot\n' > /run/systemd/shutdown/scheduled \
+ && mkdir -p /var/lib/apt/periodic /var/lib/systemd/timers \
+ && touch -d @1893450000 /var/lib/systemd/timers/stamp-apt-daily-upgrade.timer \
+ && touch -d @1893400000 /var/lib/apt/periodic/unattended-upgrades-stamp \
+ && touch -d @1893300000 /var/lib/apt/periodic/update-stamp
 EOF
 mkdir "$TMP/root"
 docker create --name "$NAME-host" "$HOST_IMAGE" >/dev/null
@@ -148,6 +160,15 @@ if wait_metrics /smoke-metrics "$m" '^apt_upgrades_pending '; then
   expect "$m" '^apt_auto_reboot_timezone_offset_seconds\{timezone="Europe/Paris"\} (3600|7200)$' "Europe/Paris offset"
   # node_exporter re-exposes textfile values as floats: 1893461400 -> 1.8934614e+09
   expect "$m" '^node_reboot_scheduled_timestamp_seconds (1893461400|1\.8934614e\+09)$' "node_reboot_scheduled_timestamp_seconds"
+  # no systemd running in this root: the timer is read from its stamp file, the next run is unknown
+  expect "$m" '^apt_upgrade_timer_last_timestamp_seconds (1893450000|1\.89345e\+09)$' "apt_upgrade_timer_last_timestamp_seconds from the stamp"
+  expect "$m" '^apt_unattended_upgrades_last_run_timestamp_seconds (1893400000|1\.8934e\+09)$' "apt_unattended_upgrades_last_run_timestamp_seconds"
+  expect "$m" '^apt_lists_update_timestamp_seconds (1893300000|1\.8933e\+09)$' "apt_lists_update_timestamp_seconds"
+  if grep -q '^apt_upgrade_timer_next_timestamp_seconds ' "$m"; then
+    fail "apt_upgrade_timer_next_timestamp_seconds without systemd"
+  else
+    pass "no apt_upgrade_timer_next_timestamp_seconds without systemd"
+  fi
 else
   fail "apt metrics not served on $ADDR/smoke-metrics"
 fi
