@@ -141,6 +141,11 @@ RUN printf 'APT::Periodic::Update-Package-Lists "1";\nAPT::Periodic::Unattended-
  && touch -d @1893450000 /var/lib/systemd/timers/stamp-apt-daily-upgrade.timer \
  && touch -d @1893400000 /var/lib/apt/periodic/unattended-upgrades-stamp \
  && touch -d @1893300000 /var/lib/apt/periodic/update-stamp
+# a systemd that ignores --timestamp=unix and gives dates as text; the timer never fired
+RUN printf '%s\n' '#!/bin/sh' 'case "$*" in' \
+      '  *NextElapseUSecRealtime*) echo "NextElapseUSecRealtime=Wed 2030-01-02 06:07:18 UTC" ;;' \
+      '  *LastTriggerUSec*) echo "LastTriggerUSec=n/a" ;;' 'esac' > /usr/bin/systemctl \
+ && chmod 755 /usr/bin/systemctl
 EOF
 mkdir "$TMP/root"
 docker create --name "$NAME-host" "$HOST_IMAGE" >/dev/null
@@ -160,15 +165,11 @@ if wait_metrics /smoke-metrics "$m" '^apt_upgrades_pending '; then
   expect "$m" '^apt_auto_reboot_timezone_offset_seconds\{timezone="Europe/Paris"\} (3600|7200)$' "Europe/Paris offset"
   # node_exporter re-exposes textfile values as floats: 1893461400 -> 1.8934614e+09
   expect "$m" '^node_reboot_scheduled_timestamp_seconds (1893461400|1\.8934614e\+09)$' "node_reboot_scheduled_timestamp_seconds"
-  # no systemd running in this root: the timer is read from its stamp file, the next run is unknown
+  # the next run is read from systemctl's text date, the last one from the stamp file (n/a)
+  expect "$m" '^apt_upgrade_timer_next_timestamp_seconds (1893564438|1\.893564438e\+09)$' "apt_upgrade_timer_next_timestamp_seconds from a text date"
   expect "$m" '^apt_upgrade_timer_last_timestamp_seconds (1893450000|1\.89345e\+09)$' "apt_upgrade_timer_last_timestamp_seconds from the stamp"
   expect "$m" '^apt_unattended_upgrades_last_run_timestamp_seconds (1893400000|1\.8934e\+09)$' "apt_unattended_upgrades_last_run_timestamp_seconds"
   expect "$m" '^apt_lists_update_timestamp_seconds (1893300000|1\.8933e\+09)$' "apt_lists_update_timestamp_seconds"
-  if grep -q '^apt_upgrade_timer_next_timestamp_seconds ' "$m"; then
-    fail "apt_upgrade_timer_next_timestamp_seconds without systemd"
-  else
-    pass "no apt_upgrade_timer_next_timestamp_seconds without systemd"
-  fi
 else
   fail "apt metrics not served on $ADDR/smoke-metrics"
 fi

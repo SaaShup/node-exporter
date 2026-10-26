@@ -21,8 +21,13 @@ mtime() {
 
 # a timestamp property of a host timer, in seconds since epoch (empty if unknown or never)
 timer_get() {
-  v="$(chroot /host systemctl show "$1" -p "$2" --value --timestamp=unix 2>/dev/null)"
-  case "$v" in @[0-9]*) echo "${v#@}" ;; esac
+  v="$(chroot /host systemctl show "$1" -p "$2" --timestamp=unix 2>/dev/null)"
+  v="${v#*=}"
+  case "$v" in
+    @[0-9]*) echo "${v#@}" ;;
+    ""|n/a|0) ;;
+    *) chroot /host date -d "$v" +%s 2>/dev/null ;;
+  esac
 }
 
 # metric <name> <help> <value>: nothing when the value is empty
