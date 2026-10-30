@@ -13,10 +13,14 @@ the unattended-upgrades reboot settings.
 ## What the image sets, what the container must set
 
 Baked in (`entrypoint.sh`): `--path.rootfs=/host`, udev data, the textfile
-directory, and `--web.listen-address=$LISTEN_ADDRESS` (default
-`172.31.0.1:9100`), plus the labels `prometheus_scrape=true` and
-`prometheus_address=172.31.0.1:9100`. Arguments given at run time are
-**added** to these flags.
+directory, and `--web.listen-address=$LISTEN_ADDRESS`, plus the labels
+`prometheus_scrape=true` and `prometheus_address=172.31.0.1:9100`.
+Arguments given at run time are **added** to these flags.
+
+When `LISTEN_ADDRESS` isn't set, the entrypoint resolves it itself from the
+IP currently carried by the `LISTEN_INTERFACE` interface (default
+`traefik`). If that interface doesn't exist, it
+falls back to `172.31.0.1:9100`.
 
 Required at run time:
 
@@ -28,10 +32,13 @@ Required at run time:
 
 `172.31.0.1` is the gateway of the paashup `traefik` network
 (`172.31.0.0/16`): Prometheus reaches node-exporter there, and port 9100
-is not exposed on the public IP. If that network has another subnet, set
-`LISTEN_ADDRESS=<gateway>:9100` **and** the label
-`prometheus_address=<gateway>:9100`. Without the `traefik` network the
-container exits (`cannot assign requested address`).
+is not exposed on the public IP. The entrypoint auto-detects that gateway
+from the `traefik` interface, so most hosts need nothing set. If the
+bridge has another name, set `LISTEN_INTERFACE=<name>`; to pin the
+address instead of detecting it, set `LISTEN_ADDRESS=<gateway>:9100`.
+Either way, also update the label `prometheus_address=<gateway>:9100` if
+it differs from `172.31.0.1:9100`. Without a resolvable interface or
+address the container exits (`cannot assign requested address`).
 
 The textfile metrics are written by `apt-metrics.sh`, started next to
 node_exporter: every `APT_METRICS_INTERVAL` seconds (default 300) it runs
