@@ -52,8 +52,24 @@ echo "== labels and env"
 labels="$(docker image inspect -f '{{json .Config.Labels}}' "$IMAGE")"
 [[ "$labels" == *'"prometheus_scrape":"true"'* ]] && pass "prometheus_scrape=true" || fail "prometheus_scrape label: $labels"
 [[ "$labels" == *'"prometheus_address":"172.31.0.1:9100"'* ]] && pass "prometheus_address=172.31.0.1:9100" || fail "prometheus_address label: $labels"
-env="$(docker image inspect -f '{{json .Config.Env}}' "$IMAGE")"
-[[ "$env" == *'LISTEN_ADDRESS=172.31.0.1:9100'* ]] && pass "default LISTEN_ADDRESS" || fail "LISTEN_ADDRESS env: $env"
+
+echo "== LISTEN_ADDRESS auto-detected from LISTEN_INTERFACE"
+docker run -d --name "$NAME" --network host --pid host -v /:/host:ro,rslave \
+  -e LISTEN_INTERFACE=lo "$IMAGE" >/dev/null
+m="$TMP/metrics-iface"
+ok=1
+for _ in $(seq 1 30); do
+  if curl -fsS "http://127.0.0.1:9100/metrics" -o "$m" 2>/dev/null && grep -Eq '^node_reboot_required ' "$m"; then
+    ok=0; break
+  fi
+  sleep 1
+done
+if [ "$ok" = 0 ]; then
+  pass "listens on the lo interface's address (127.0.0.1:9100)"
+else
+  fail "LISTEN_INTERFACE=lo did not resolve to 127.0.0.1:9100"; docker logs "$NAME" 2>&1 | tail -10
+fi
+docker rm -fv "$NAME" >/dev/null
 
 echo "== default address without the traefik network"
 if ip -4 addr 2>/dev/null | grep -q 'inet 172\.31\.0\.1/'; then
@@ -116,7 +132,9 @@ else
   fail "node_exporter not running as nobody: $procs"
 fi
 grep -q 'apt-metrics.sh' <<<"$procs" && pass "apt-metrics.sh running" || fail "apt-metrics.sh not running: $procs"
-if docker logs "$NAME" 2>&1 | grep -E 'level=ERROR|apt-metrics:'; then
+# hardware-dependent collectors (zfs, nfs, infiniband...) can legitimately fail depending on
+# what this host exposes under /sys and /proc; only flag errors from other sources
+if docker logs "$NAME" 2>&1 | grep -E 'level=ERROR|apt-metrics:' | grep -Ev 'collector failed" name=(zfs|nfs|nfsd|infiniband|mdadm|bcache|bcachefs)'; then
   fail "errors in container logs"
 else
   pass "no error in logs"
