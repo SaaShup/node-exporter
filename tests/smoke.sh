@@ -132,7 +132,9 @@ else
   fail "node_exporter not running as nobody: $procs"
 fi
 grep -q 'apt-metrics.sh' <<<"$procs" && pass "apt-metrics.sh running" || fail "apt-metrics.sh not running: $procs"
-if docker logs "$NAME" 2>&1 | grep -E 'level=ERROR|apt-metrics:'; then
+# hardware-dependent collectors (zfs, nfs, infiniband...) can legitimately fail depending on
+# what this host exposes under /sys and /proc; only flag errors from other sources
+if docker logs "$NAME" 2>&1 | grep -E 'level=ERROR|apt-metrics:' | grep -Ev 'collector failed" name=(zfs|nfs|nfsd|infiniband|mdadm|bcache|bcachefs)'; then
   fail "errors in container logs"
 else
   pass "no error in logs"
