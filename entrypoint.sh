@@ -7,6 +7,10 @@ TEXTFILE_DIR=/tmp/textfile
 mkdir -p "$TEXTFILE_DIR"
 /apt-metrics.sh "$TEXTFILE_DIR" &
 
+# LISTEN_ADDRESS, when not set explicitly, is resolved from the IP currently carried by the
+# LISTEN_INTERFACE interface (the paashup traefik network's bridge, same name on every host even
+# though its subnet/gateway differs): no WEB_GATEWAY to look up and set by hand on each deploy.
+if [ -z "${LISTEN_ADDRESS:-}" ]; then
   iface="${LISTEN_INTERFACE:-traefik}"
   ip="$(ip -4 -o addr show dev "$iface" 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -n1)"
   if [ -n "$ip" ]; then
